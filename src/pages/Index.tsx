@@ -104,14 +104,17 @@ export default function LandingPage() {
               No design skills needed. Powered by advanced AI.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Button variant="hero" size="lg" className="text-base px-8 py-6" asChild>
-                <Link to="/register">
-                  Start Removing Backgrounds
-                  <ArrowRight className="ml-2 h-5 w-5" />
+              <Button variant="hero" size="lg" className="text-base px-8 py-6 gap-2" asChild>
+                <Link to="/dashboard">
+                  <Upload className="h-5 w-5" />
+                  Upload Image
                 </Link>
               </Button>
               <Button variant="glass" size="lg" className="text-base px-8 py-6" asChild>
-                <Link to="/api-docs">View API Docs</Link>
+                <Link to="/register">
+                  Get Started Free
+                  <ArrowRight className="ml-2 h-5 w-5" />
+                </Link>
               </Button>
             </div>
             <p className="text-sm text-muted-foreground mt-4">5 free images daily · No credit card required</p>

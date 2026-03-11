@@ -6,6 +6,7 @@ import { Menu, X } from "lucide-react";
 import { useState } from "react";
 
 const navLinks = [
+  { label: "Upload", href: "/dashboard" },
   { label: "Features", href: "/#features" },
   { label: "Pricing", href: "/#pricing" },
   { label: "API", href: "/api-docs" },
@@ -29,13 +30,23 @@ export function Navbar() {
 
         <nav className="hidden md:flex items-center gap-6">
           {navLinks.map((link) => (
-            <a
-              key={link.href}
-              href={link.href}
-              className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-            >
-              {link.label}
-            </a>
+            link.href.startsWith("/#") ? (
+              <a
+                key={link.href}
+                href={link.href}
+                className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+              >
+                {link.label}
+              </a>
+            ) : (
+              <Link
+                key={link.href}
+                to={link.href}
+                className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+              >
+                {link.label}
+              </Link>
+            )
           ))}
         </nav>
 
@@ -64,14 +75,25 @@ export function Navbar() {
         >
           <div className="flex flex-col gap-2 p-4">
             {navLinks.map((link) => (
-              <a
-                key={link.href}
-                href={link.href}
-                className="text-sm text-muted-foreground hover:text-foreground py-2"
-                onClick={() => setMobileOpen(false)}
-              >
-                {link.label}
-              </a>
+              link.href.startsWith("/#") ? (
+                <a
+                  key={link.href}
+                  href={link.href}
+                  className="text-sm text-muted-foreground hover:text-foreground py-2"
+                  onClick={() => setMobileOpen(false)}
+                >
+                  {link.label}
+                </a>
+              ) : (
+                <Link
+                  key={link.href}
+                  to={link.href}
+                  className="text-sm text-muted-foreground hover:text-foreground py-2"
+                  onClick={() => setMobileOpen(false)}
+                >
+                  {link.label}
+                </Link>
+              )
             ))}
             <div className="flex flex-col gap-2 pt-2 border-t border-border/50">
               <Button variant="ghost" asChild>
