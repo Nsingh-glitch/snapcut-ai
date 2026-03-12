@@ -57,23 +57,33 @@ export default function DashboardPage() {
     setProcessedImageUrl(null);
 
     try {
+      console.log("Starting upload to webhook:", file.name, file.type, file.size);
+      
+      // We'll try sending it as FormData which is more standard for web uploads
+      const formData = new FormData();
+      formData.append("image", file);
+
       const response = await fetch("https://random8171.app.n8n.cloud/webhook/remove-bg", {
         method: "POST",
-        body: file,
-        headers: {
-          "Content-Type": file.type,
-        },
+        body: formData,
+        // When using FormData, we don't set Content-Type header manually
+        // as the browser needs to set it with the correct boundary.
       });
+
+      console.log("Webhook response status:", response.status);
 
       if (!response.ok) {
         const text = await response.text();
-        throw new Error(text || "Failed to remove background. Please try again.");
+        console.error("Webhook error response:", text);
+        throw new Error(text || `Server error: ${response.status}`);
       }
 
       const contentType = response.headers.get("content-type");
+      console.log("Response content-type:", contentType);
+
       if (!contentType || !contentType.includes("application/json")) {
         const text = await response.text();
-        console.error("Non-JSON response:", text);
+        console.error("Non-JSON response received:", text);
         throw new Error("Server did not return a valid JSON response.");
       }
 
@@ -94,6 +104,7 @@ export default function DashboardPage() {
       const result = Array.isArray(data) ? data[0] : data;
       
       if (result && result.URL) {
+        console.log("Received processed image URL:", result.URL);
         setProcessedImageUrl(result.URL);
         setResultReady(true);
         
@@ -108,12 +119,21 @@ export default function DashboardPage() {
         
         toast.success("Background removed successfully!");
       } else {
-        console.error("Missing URL in response:", result);
+        console.error("Missing URL in response data:", result);
         throw new Error("Invalid response format: Missing image URL.");
       }
     } catch (error) {
-      console.error("Processing error:", error);
-      toast.error(error instanceof Error ? error.message : "Failed to process image.");
+      console.error("Detailed Processing Error:", error);
+      
+      let errorMessage = "Failed to process image.";
+      if (error instanceof Error) {
+        errorMessage = error.message;
+        if (errorMessage === "Failed to fetch") {
+          errorMessage = "Network error: Connection to background removal server failed. This could be due to CORS or a network block.";
+        }
+      }
+      
+      toast.error(errorMessage);
       setUploadedFile(null);
     } finally {
       setProcessing(false);
