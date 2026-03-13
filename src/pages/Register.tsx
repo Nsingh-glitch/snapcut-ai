@@ -3,18 +3,49 @@ import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import snapcutLogo from "@/assets/snapcut-logo.png";
 import { Mail, Lock, Eye, EyeOff, User } from "lucide-react";
+import { toast } from "sonner";
 
 export default function RegisterPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const navigate = useNavigate();
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setIsLoading(true);
+
+    try {
+      // Get existing users
+      const users = JSON.parse(localStorage.getItem("snapcut_users") || "[]");
+
+      // Check if user exists
+      if (users.find((u: any) => u.email === email)) {
+        toast.error("User with this email already exists");
+        setIsLoading(false);
+        return;
+      }
+
+      // Add new user
+      const newUser = { id: crypto.randomUUID(), name, email, password };
+      users.push(newUser);
+      localStorage.setItem("snapcut_users", JSON.stringify(users));
+
+      // Create session
+      localStorage.setItem("snapcut_user_session", JSON.stringify({ id: newUser.id, name: newUser.name, email: newUser.email }));
+
+      toast.success("Account created successfully!");
+      navigate("/dashboard");
+    } catch (error) {
+      toast.error("Failed to create account. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -79,7 +110,9 @@ export default function RegisterPage() {
                 </button>
               </div>
             </div>
-            <Button variant="hero" className="w-full" type="submit">Create Account</Button>
+            <Button variant="hero" className="w-full" type="submit" disabled={isLoading}>
+              {isLoading ? "Creating Account..." : "Create Account"}
+            </Button>
           </form>
         </div>
 

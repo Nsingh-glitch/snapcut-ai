@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import snapcutLogo from "@/assets/snapcut-logo.png";
 import {
   Upload, Download, Image, CreditCard, Settings, LogOut,
@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
+import { useCashfree } from "@/hooks/use-cashfree";
 
 const sidebarItems = [
   { icon: LayoutDashboard, label: "Dashboard", id: "dashboard" },
@@ -35,14 +36,33 @@ export default function DashboardPage() {
   const [processedImageUrl, setProcessedImageUrl] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
   const [resultReady, setResultReady] = useState(false);
+  const [user, setUser] = useState<any>(null);
+  const navigate = useNavigate();
+  const { triggerPayment } = useCashfree();
+
   const [history, setHistory] = useState<HistoryItem[]>(() => {
     const saved = localStorage.getItem("snapcut_history");
     return saved ? JSON.parse(saved) : [];
   });
 
   useEffect(() => {
+    const session = localStorage.getItem("snapcut_user_session");
+    if (!session) {
+      navigate("/login");
+      return;
+    }
+    setUser(JSON.parse(session));
+  }, [navigate]);
+
+  useEffect(() => {
     localStorage.setItem("snapcut_history", JSON.stringify(history));
   }, [history]);
+
+  const handleSignOut = () => {
+    localStorage.removeItem("snapcut_user_session");
+    toast.success("Signed out successfully");
+    navigate("/login");
+  };
 
   const validateFile = (file: File): string | null => {
     const validTypes = ["image/jpeg", "image/png", "image/webp"];
@@ -250,10 +270,10 @@ export default function DashboardPage() {
     <div className="min-h-screen bg-background flex">
       {/* Sidebar */}
       <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-card border-r border-border transform transition-transform duration-200 ${sidebarOpen ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0 lg:static`}>
-        <div className="flex items-center gap-2 p-4 border-b border-border">
+        <Link to="/" className="flex items-center gap-2 p-4 border-b border-border hover:opacity-80 transition-opacity">
           <img src={snapcutLogo} alt="SnapCut AI" className="h-8 w-8" />
           <span className="font-bold gradient-text">SnapCut AI</span>
-        </div>
+        </Link>
         <nav className="p-3 space-y-1">
           {sidebarItems.map((item) => (
             <button
@@ -277,11 +297,24 @@ export default function DashboardPage() {
               <span className="text-primary font-medium">3/5</span>
             </div>
             <Progress value={60} className="h-1.5" />
-            <p className="text-xs text-muted-foreground mt-2">
-              <Link to="/#pricing" className="text-primary hover:underline">Upgrade for unlimited</Link>
-            </p>
+            <div className="flex justify-between items-center mt-3">
+              <p className="text-[10px] text-muted-foreground">
+                <Link to="/pricing" className="text-primary hover:underline">View Plans</Link>
+              </p>
+              <Button 
+                variant="hero" 
+                size="sm" 
+                className="h-7 px-3 text-[10px]"
+                onClick={() => triggerPayment("50 Credits", 199)}
+              >
+                Top Up
+              </Button>
+            </div>
           </div>
-          <button className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors">
+          <button 
+            onClick={handleSignOut}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
+          >
             <LogOut className="h-4 w-4" />
             Sign Out
           </button>
@@ -300,8 +333,8 @@ export default function DashboardPage() {
           </button>
           <h2 className="font-semibold text-foreground capitalize">{activeTab.replace("-", " ")}</h2>
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-full gradient-btn flex items-center justify-center text-xs font-bold text-primary-foreground">
-              U
+            <div className="w-8 h-8 rounded-full gradient-btn flex items-center justify-center text-xs font-bold text-primary-foreground uppercase">
+              {user?.name?.charAt(0) || "U"}
             </div>
           </div>
         </header>

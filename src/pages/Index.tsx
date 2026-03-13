@@ -236,7 +236,7 @@ export default function LandingPage() {
                   className="w-full"
                   asChild
                 >
-                  <Link to="/register">{plan.cta}</Link>
+                  <Link to="/pricing">{plan.cta}</Link>
                 </Button>
               </motion.div>
             ))}

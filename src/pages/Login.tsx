@@ -3,18 +3,45 @@ import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import snapcutLogo from "@/assets/snapcut-logo.png";
 import { Mail, Lock, Eye, EyeOff } from "lucide-react";
+import { toast } from "sonner";
 
 export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const navigate = useNavigate();
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // Auth integration will go here
+    setIsLoading(true);
+
+    try {
+      // Get existing users
+      const users = JSON.parse(localStorage.getItem("snapcut_users") || "[]");
+
+      // Find user
+      const user = users.find((u: any) => u.email === email && u.password === password);
+
+      if (!user) {
+        toast.error("Invalid email or password");
+        setIsLoading(false);
+        return;
+      }
+
+      // Create session
+      localStorage.setItem("snapcut_user_session", JSON.stringify({ id: user.id, name: user.name, email: user.email }));
+
+      toast.success("Welcome back!");
+      navigate("/dashboard");
+    } catch (error) {
+      toast.error("Failed to login. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -95,8 +122,8 @@ export default function LoginPage() {
                 </button>
               </div>
             </div>
-            <Button variant="hero" className="w-full" type="submit">
-              Sign In
+            <Button variant="hero" className="w-full" type="submit" disabled={isLoading}>
+              {isLoading ? "Signing In..." : "Sign In"}
             </Button>
           </form>
         </div>

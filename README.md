@@ -35,6 +35,14 @@ AI-powered background removal in seconds. Remove image backgrounds instantly wit
    npm run dev
    ```
 
+4. **Optional**: To run serverless functions (Cashfree API) locally:
+   ```sh
+   # Install Vercel CLI
+   npm i -g vercel
+   # Run with Vercel Dev
+   npm run dev:vercel
+   ```
+
 ## Technologies Used
 
 - **Vite**: Next-generation frontend tooling.

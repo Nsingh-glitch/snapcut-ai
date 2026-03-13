@@ -1,20 +1,31 @@
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import snapcutLogo from "@/assets/snapcut-logo.png";
 import { Menu, X } from "lucide-react";
 import { useState } from "react";
+import { toast } from "sonner";
 
 const navLinks = [
   { label: "Upload", href: "/dashboard" },
   { label: "Features", href: "/#features" },
-  { label: "Pricing", href: "/#pricing" },
+  { label: "Pricing", href: "/pricing" },
   { label: "API", href: "/api-docs" },
 ];
 
 export function Navbar() {
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const navigate = useNavigate();
+  
+  const session = localStorage.getItem("snapcut_user_session");
+  const user = session ? JSON.parse(session) : null;
+
+  const handleSignOut = () => {
+    localStorage.removeItem("snapcut_user_session");
+    toast.success("Signed out successfully");
+    navigate("/login");
+  };
 
   return (
     <motion.header
@@ -51,12 +62,25 @@ export function Navbar() {
         </nav>
 
         <div className="hidden md:flex items-center gap-3">
-          <Button variant="ghost" asChild>
-            <Link to="/login">Log in</Link>
-          </Button>
-          <Button variant="hero" asChild>
-            <Link to="/register">Get Started Free</Link>
-          </Button>
+          {user ? (
+            <>
+              <Button variant="ghost" asChild>
+                <Link to="/dashboard">Dashboard</Link>
+              </Button>
+              <Button variant="hero" onClick={handleSignOut}>
+                Sign Out
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button variant="ghost" asChild>
+                <Link to="/login">Log in</Link>
+              </Button>
+              <Button variant="hero" asChild>
+                <Link to="/register">Get Started Free</Link>
+              </Button>
+            </>
+          )}
         </div>
 
         <button
@@ -96,12 +120,25 @@ export function Navbar() {
               )
             ))}
             <div className="flex flex-col gap-2 pt-2 border-t border-border/50">
-              <Button variant="ghost" asChild>
-                <Link to="/login">Log in</Link>
-              </Button>
-              <Button variant="hero" asChild>
-                <Link to="/register">Get Started Free</Link>
-              </Button>
+              {user ? (
+                <>
+                  <Button variant="ghost" asChild>
+                    <Link to="/dashboard" onClick={() => setMobileOpen(false)}>Dashboard</Link>
+                  </Button>
+                  <Button variant="hero" onClick={() => { handleSignOut(); setMobileOpen(false); }}>
+                    Sign Out
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button variant="ghost" asChild>
+                    <Link to="/login" onClick={() => setMobileOpen(false)}>Log in</Link>
+                  </Button>
+                  <Button variant="hero" asChild>
+                    <Link to="/register" onClick={() => setMobileOpen(false)}>Get Started Free</Link>
+                  </Button>
+                </>
+              )}
             </div>
           </div>
         </motion.div>
