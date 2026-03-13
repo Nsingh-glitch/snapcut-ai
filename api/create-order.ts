@@ -1,29 +1,18 @@
-export const config = {
-  runtime: 'edge',
-};
-
 const planToPriceMap = {
   'pro': 499,
   'credits': 199,
 };
 
-export default async function handler(req) {
+export default async function handler(req, res) {
   if (req.method !== 'POST') {
-    return new Response(JSON.stringify({ error: 'Method not allowed' }), {
-      status: 405,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return res.status(405).json({ error: 'Method not allowed' });
   }
 
   try {
-    const body = await req.json();
-    const { planId, customerEmail, customerName } = body;
+    const { planId, customerEmail, customerName } = req.body;
 
     if (!planId || !planToPriceMap[planId]) {
-      return new Response(JSON.stringify({ error: 'Invalid plan specified' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      return res.status(400).json({ error: 'Invalid plan specified' });
     }
 
     const appId = process.env.VITE_CASHFREE_APP_ID;
@@ -31,10 +20,7 @@ export default async function handler(req) {
     const mode = process.env.VITE_CASHFREE_MODE || 'sandbox';
 
     if (!appId || !secretKey) {
-      return new Response(JSON.stringify({ error: 'Cashfree credentials missing on server' }), {
-        status: 500,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      return res.status(500).json({ error: 'Cashfree credentials missing on server' });
     }
 
     const amount = planToPriceMap[planId];
@@ -63,7 +49,7 @@ export default async function handler(req) {
           customer_phone: '9999999999',
         },
         order_meta: {
-          return_url: `https://${req.headers.get('host')}/payment-result?order_id={order_id}`,
+          return_url: `https://${req.headers.host}/payment-result?order_id={order_id}`,
         },
       }),
     });
@@ -71,24 +57,15 @@ export default async function handler(req) {
     const data = await response.json();
 
     if (!response.ok) {
-      return new Response(JSON.stringify({ error: data.message || 'Failed to create order' }), {
-        status: response.status,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      return res.status(response.status).json({ error: data.message || 'Failed to create order' });
     }
 
-    return new Response(JSON.stringify({ 
+    return res.status(200).json({ 
       order_id: orderId,
       payment_session_id: data.payment_session_id 
-    }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
     });
 
   } catch (error) {
-    return new Response(JSON.stringify({ error: 'Internal server error' }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return res.status(500).json({ error: 'Internal server error' });
   }
 }

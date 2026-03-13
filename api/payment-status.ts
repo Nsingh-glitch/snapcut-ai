@@ -1,24 +1,13 @@
-export const config = {
-  runtime: 'edge',
-};
-
-export default async function handler(req) {
+export default async function handler(req, res) {
   if (req.method !== 'GET') {
-    return new Response(JSON.stringify({ error: 'Method not allowed' }), {
-      status: 405,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return res.status(405).json({ error: 'Method not allowed' });
   }
 
   try {
-    const { searchParams } = new URL(req.url);
-    const order_id = searchParams.get('order_id');
+    const { order_id } = req.query;
 
     if (!order_id) {
-      return new Response(JSON.stringify({ error: 'Order ID is required' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      return res.status(400).json({ error: 'Order ID is required' });
     }
 
     const appId = process.env.VITE_CASHFREE_APP_ID;
@@ -26,10 +15,7 @@ export default async function handler(req) {
     const mode = process.env.VITE_CASHFREE_MODE || 'sandbox';
 
     if (!appId || !secretKey) {
-      return new Response(JSON.stringify({ error: 'Cashfree credentials missing on server' }), {
-        status: 500,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      return res.status(500).json({ error: 'Cashfree credentials missing on server' });
     }
 
     const orderUrl = mode === 'production' 
@@ -49,10 +35,7 @@ export default async function handler(req) {
     const orderData = await orderResponse.json();
 
     if (!orderResponse.ok) {
-      return new Response(JSON.stringify({ error: orderData.message || 'Failed to fetch order status' }), {
-        status: orderResponse.status,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      return res.status(orderResponse.status).json({ error: orderData.message || 'Failed to fetch order status' });
     }
 
     let ui_status = 'PENDING';
@@ -90,21 +73,15 @@ export default async function handler(req) {
       }
     }
 
-    return new Response(JSON.stringify({ 
+    return res.status(200).json({ 
       order_status: orderData.order_status,
       latest_payment_status,
       payment_message,
       order_amount: orderData.order_amount,
       ui_status
-    }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
     });
 
   } catch (error) {
-    return new Response(JSON.stringify({ error: 'Internal server error' }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return res.status(500).json({ error: 'Internal server error' });
   }
 }
