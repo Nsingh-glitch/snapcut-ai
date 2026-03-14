@@ -5,15 +5,31 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Link } from "react-router-dom";
 import snapcutLogo from "@/assets/snapcut-logo.png";
-import { Mail, ArrowLeft } from "lucide-react";
+import { Mail, ArrowLeft, Loader2 } from "lucide-react";
+import { supabase } from "@/lib/supabase";
+import { toast } from "sonner";
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSubmitted(true);
+    setIsLoading(true);
+    
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/login`,
+      });
+      if (error) throw error;
+      setSubmitted(true);
+      toast.success("Password reset link sent!");
+    } catch (error: any) {
+      toast.error(error.message || "Failed to send reset link");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -44,10 +60,12 @@ export default function ForgotPasswordPage() {
                 <Label htmlFor="email">Email address</Label>
                 <div className="relative">
                   <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input id="email" type="email" placeholder="you@example.com" className="pl-10 bg-muted/30 border-border" value={email} onChange={(e) => setEmail(e.target.value)} required />
+                  <Input id="email" type="email" placeholder="you@example.com" className="pl-10 bg-muted/30 border-border" value={email} onChange={(e) => setEmail(e.target.value)} required disabled={isLoading} />
                 </div>
               </div>
-              <Button variant="hero" className="w-full" type="submit">Send Reset Link</Button>
+              <Button variant="hero" className="w-full py-6" type="submit" disabled={isLoading}>
+                {isLoading ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : "Send Reset Link"}
+              </Button>
             </form>
           )}
         </div>

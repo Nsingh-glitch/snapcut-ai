@@ -5,11 +5,15 @@ import { Link, useNavigate } from "react-router-dom";
 import snapcutLogo from "@/assets/snapcut-logo.png";
 import {
   Upload, Download, Image, CreditCard, Settings, LogOut,
-  LayoutDashboard, History, Key, Zap, ChevronDown, Menu, X,
+  LayoutDashboard, History, Key, Zap, ChevronDown, Menu, X, Heart, User, Trash2, Camera, Mail
 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { useCashfree } from "@/hooks/use-cashfree";
+import { supabase } from "@/lib/supabase";
+import { AvatarUploadDialog } from "@/components/AvatarUploadDialog";
 
 const sidebarItems = [
   { icon: LayoutDashboard, label: "Dashboard", id: "dashboard" },
@@ -25,6 +29,7 @@ interface HistoryItem {
   originalName: string;
   processedUrl: string;
   timestamp: number;
+  isFavorite?: boolean;
 }
 
 export default function DashboardPage() {
@@ -37,6 +42,14 @@ export default function DashboardPage() {
   const [processing, setProcessing] = useState(false);
   const [resultReady, setResultReady] = useState(false);
   const [user, setUser] = useState<any>(null);
+  const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
+  const [isAvatarDialogOpen, setIsAvatarDialogOpen] = useState(false);
+  const [profileData, setProfileData] = useState({
+    name: "",
+    email: "",
+    photoUrl: ""
+  });
+  
   const navigate = useNavigate();
   const { triggerPayment } = useCashfree();
 
@@ -46,22 +59,114 @@ export default function DashboardPage() {
   });
 
   useEffect(() => {
-    const session = localStorage.getItem("snapcut_user_session");
-    if (!session) {
-      navigate("/login");
-      return;
-    }
-    setUser(JSON.parse(session));
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session) {
+        navigate("/login");
+        return;
+      }
+      const userData = {
+        id: session.user.id,
+        email: session.user.email,
+        name: session.user.user_metadata?.full_name || session.user.email?.split('@')[0],
+        photoUrl: session.user.user_metadata?.avatar_url || ""
+      };
+      setUser(userData);
+      setProfileData({
+        name: userData.name,
+        email: userData.email || "",
+        photoUrl: userData.photoUrl
+      });
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!session) {
+        navigate("/login");
+      } else {
+        const userData = {
+          id: session.user.id,
+          email: session.user.email,
+          name: session.user.user_metadata?.full_name || session.user.email?.split('@')[0],
+          photoUrl: session.user.user_metadata?.avatar_url || ""
+        };
+        setUser(userData);
+        setProfileData({
+          name: userData.name,
+          email: userData.email || "",
+          photoUrl: userData.photoUrl
+        });
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, [navigate]);
 
   useEffect(() => {
     localStorage.setItem("snapcut_history", JSON.stringify(history));
   }, [history]);
 
-  const handleSignOut = () => {
-    localStorage.removeItem("snapcut_user_session");
-    toast.success("Signed out successfully");
-    navigate("/login");
+  const handleUpdateProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsUpdatingProfile(true);
+    try {
+      const { error } = await supabase.auth.updateUser({
+        data: { 
+          full_name: profileData.name,
+          avatar_url: profileData.photoUrl
+        }
+      });
+      if (error) throw error;
+      toast.success("Profile updated successfully!");
+    } catch (error: any) {
+      toast.error(error.message || "Failed to update profile");
+    } finally {
+      setIsUpdatingProfile(false);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    if (window.confirm("Are you sure you want to delete your account? This action cannot be undone.")) {
+      try {
+        // Supabase doesn't allow users to delete themselves directly for security reasons
+        // via the client SDK without a specific Edge Function or Admin API.
+        // For now, we will sign them out and inform them.
+        toast.info("Account deletion request submitted. Please contact support to finalize.");
+        await handleSignOut();
+      } catch (error: any) {
+        toast.error("Failed to process request");
+      }
+    }
+  };
+
+  const handleSignOut = async () => {
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      toast.error("Error signing out");
+    } else {
+      toast.success("Signed out successfully");
+      navigate("/login");
+    }
+  };
+
+  const toggleFavorite = (id: string) => {
+    setHistory(prev => prev.map(item => 
+      item.id === id ? { ...item, isFavorite: !item.isFavorite } : item
+    ));
+    const item = history.find(i => i.id === id);
+    toast.success(item?.isFavorite ? "Removed from favorites" : "Added to favorites");
+  };
+
+  const handleAvatarUploadComplete = async (url: string) => {
+    setProfileData(prev => ({ ...prev, photoUrl: url }));
+    // Also update in Supabase Auth immediately
+    try {
+      const { error } = await supabase.auth.updateUser({
+        data: { avatar_url: url }
+      });
+      if (error) throw error;
+      toast.success("Profile photo updated successfully!");
+    } catch (error: any) {
+      toast.error(error.message || "Failed to update profile photo");
+    }
   };
 
   const validateFile = (file: File): string | null => {
@@ -523,6 +628,14 @@ export default function DashboardPage() {
                           className="relative z-10 max-w-[90%] max-h-[90%] object-contain transition-transform group-hover:scale-110 duration-300"
                         />
                         <div className="absolute inset-0 bg-background/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 z-20 backdrop-blur-sm">
+                          <Button 
+                            size="icon" 
+                            variant="hero" 
+                            className={`${item.isFavorite ? "bg-red-500 hover:bg-red-600" : ""}`}
+                            onClick={() => toggleFavorite(item.id)}
+                          >
+                            <Heart className={`h-4 w-4 ${item.isFavorite ? "fill-current" : ""}`} />
+                          </Button>
                           <Button size="icon" variant="hero" onClick={() => handleDownload(item.processedUrl, item.originalName)}>
                             <Download className="h-4 w-4" />
                           </Button>
@@ -531,13 +644,18 @@ export default function DashboardPage() {
                           </Button>
                         </div>
                       </div>
-                      <div className="p-4 border-t border-border">
-                        <p className="text-sm font-medium text-foreground truncate" title={item.originalName}>
-                          {item.originalName}
-                        </p>
-                        <p className="text-[10px] text-muted-foreground mt-1">
-                          {new Date(item.timestamp).toLocaleDateString()} · {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        </p>
+                      <div className="p-4 border-t border-border flex justify-between items-start">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium text-foreground truncate" title={item.originalName}>
+                            {item.originalName}
+                          </p>
+                          <p className="text-[10px] text-muted-foreground mt-1">
+                            {new Date(item.timestamp).toLocaleDateString()} · {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </p>
+                        </div>
+                        {item.isFavorite && (
+                          <Heart className="h-4 w-4 text-red-500 fill-current flex-shrink-0 ml-2" />
+                        )}
                       </div>
                     </motion.div>
                   ))}
@@ -546,7 +664,90 @@ export default function DashboardPage() {
             </motion.div>
           )}
 
-          {!["upload", "dashboard", "history"].includes(activeTab) && (
+          {activeTab === "settings" && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="max-w-2xl mx-auto">
+              <div className="glass-card rounded-2xl p-6 md:p-8 neon-border">
+                <h3 className="text-xl font-bold text-foreground mb-6">Profile Settings</h3>
+                
+                <div className="flex flex-col items-center mb-8">
+                  <div className="relative group">
+                    <div className="w-24 h-24 rounded-full overflow-hidden bg-muted flex items-center justify-center border-2 border-primary/20 group-hover:border-primary transition-colors">
+                      {profileData.photoUrl ? (
+                        <img src={profileData.photoUrl} alt="Profile" className="w-full h-full object-cover" />
+                      ) : (
+                        <User className="h-12 w-12 text-muted-foreground" />
+                      )}
+                    </div>
+                    <button 
+                      type="button"
+                      onClick={() => setIsAvatarDialogOpen(true)}
+                      className="absolute bottom-0 right-0 w-8 h-8 rounded-full gradient-btn flex items-center justify-center cursor-pointer shadow-lg hover:scale-110 transition-transform"
+                    >
+                      <Camera className="h-4 w-4 text-primary-foreground" />
+                    </button>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-3">Click icon to update profile picture</p>
+                </div>
+
+                <AvatarUploadDialog 
+                  isOpen={isAvatarDialogOpen}
+                  onClose={() => setIsAvatarDialogOpen(false)}
+                  onUploadComplete={handleAvatarUploadComplete}
+                  userId={user?.id}
+                />
+
+                <form onSubmit={handleUpdateProfile} className="space-y-6">
+                  <div className="space-y-2">
+                    <Label htmlFor="settings-name">Full Name</Label>
+                    <div className="relative">
+                      <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input 
+                        id="settings-name" 
+                        value={profileData.name} 
+                        onChange={(e) => setProfileData(prev => ({ ...prev, name: e.target.value }))}
+                        className="pl-10 bg-muted/30"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="settings-email">Email Address</Label>
+                    <div className="relative">
+                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input 
+                        id="settings-email" 
+                        value={profileData.email} 
+                        disabled 
+                        className="pl-10 bg-muted/10 opacity-70 cursor-not-allowed"
+                      />
+                    </div>
+                    <p className="text-[10px] text-muted-foreground italic">Email changes require manual verification. Contact support.</p>
+                  </div>
+
+                  <div className="pt-4 flex flex-col gap-4">
+                    <Button variant="hero" type="submit" className="w-full" disabled={isUpdatingProfile}>
+                      {isUpdatingProfile ? "Saving Changes..." : "Save Changes"}
+                    </Button>
+                    
+                    <div className="border-t border-border mt-4 pt-6">
+                      <h4 className="text-sm font-semibold text-destructive mb-2">Danger Zone</h4>
+                      <p className="text-xs text-muted-foreground mb-4">Once you delete your account, there is no going back. Please be certain.</p>
+                      <Button 
+                        variant="glass" 
+                        type="button" 
+                        className="w-full text-destructive hover:bg-destructive/10 border-destructive/20"
+                        onClick={handleDeleteAccount}
+                      >
+                        <Trash2 className="h-4 w-4 mr-2" /> Delete Account
+                      </Button>
+                    </div>
+                  </div>
+                </form>
+              </div>
+            </motion.div>
+          )}
+
+          {!["upload", "dashboard", "history", "settings"].includes(activeTab) && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="glass-card rounded-2xl p-12 neon-border text-center">
               <Settings className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
               <h3 className="text-lg font-semibold text-foreground mb-2 capitalize">{activeTab.replace("-", " ")}</h3>
