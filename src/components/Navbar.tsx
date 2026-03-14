@@ -3,8 +3,9 @@ import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import snapcutLogo from "@/assets/snapcut-logo.png";
 import { Menu, X } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { toast } from "sonner";
+import { supabase } from "@/lib/supabase";
 
 const navLinks = [
   { label: "Upload", href: "/dashboard" },
@@ -17,15 +18,33 @@ export function Navbar() {
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const navigate = useNavigate();
-  
-  const session = localStorage.getItem("snapcut_user_session");
-  const user = session ? JSON.parse(session) : null;
+  const [session, setSession] = useState<any>(null);
 
-  const handleSignOut = () => {
-    localStorage.removeItem("snapcut_user_session");
-    toast.success("Signed out successfully");
-    navigate("/login");
+  useEffect(() => {
+    // Get initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+    });
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const handleSignOut = async () => {
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      toast.error(error.message);
+    } else {
+      toast.success("Signed out successfully");
+      navigate("/login");
+    }
   };
+
+  const user = session?.user;
 
   return (
     <motion.header
