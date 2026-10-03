@@ -8,25 +8,27 @@ import { useState } from "react";
 const endpoints = [
   {
     method: "POST",
-    path: "/api/v1/remove-bg",
-    description: "Remove background from an image",
-    example: `curl -X POST https://api.snapcutai.com/v1/remove-bg \\
-  -H "Authorization: Bearer YOUR_API_KEY" \\
+    path: "/api/remove-bg",
+    description: "Remove the background from one JPG, PNG, or WEBP image. Maximum file size: 10MB.",
+    example: `curl -X POST https://YOUR_SNAPCUT_HOST/api/remove-bg \\
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \\
   -F "image=@photo.jpg"`,
   },
   {
-    method: "GET",
-    path: "/api/v1/usage",
-    description: "Get your API usage statistics",
-    example: `curl https://api.snapcutai.com/v1/usage \\
-  -H "Authorization: Bearer YOUR_API_KEY"`,
+    method: "POST",
+    path: "/api/create-order",
+    description: "Create an authenticated Cashfree sandbox credit order.",
+    example: `curl -X POST https://YOUR_SNAPCUT_HOST/api/create-order \\
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \\
+  -H "Content-Type: application/json" \\
+  -d '{"planId":"starter"}'`,
   },
   {
     method: "GET",
-    path: "/api/v1/credits",
-    description: "Check remaining credits",
-    example: `curl https://api.snapcutai.com/v1/credits \\
-  -H "Authorization: Bearer YOUR_API_KEY"`,
+    path: "/api/payment-status?order_id=ORDER_ID",
+    description: "Verify the authenticated user's Cashfree order status.",
+    example: `curl "https://YOUR_SNAPCUT_HOST/api/payment-status?order_id=ORDER_ID" \\
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"`,
   },
 ];
 
@@ -64,9 +66,17 @@ export default function ApiDocsPage() {
           <div className="glass-card rounded-2xl p-6 neon-border mb-8">
             <h2 className="font-semibold text-foreground mb-2">Authentication</h2>
             <p className="text-sm text-muted-foreground mb-3">
-              Include your API key in the Authorization header:
+              These routes require the authenticated Supabase access token from the current user session:
             </p>
-            <CodeBlock code='Authorization: Bearer YOUR_API_KEY' />
+            <CodeBlock code='Authorization: Bearer YOUR_ACCESS_TOKEN' />
+            <p className="text-sm text-muted-foreground mt-4">
+              The server verifies this token before processing requests. Never expose service-role credentials,
+              remove.bg keys, Cashfree secrets, or private environment variables in browser code.
+            </p>
+            <p className="text-sm text-muted-foreground mt-3">
+              A dedicated developer API-key system is not currently implemented. It can be added later without
+              changing this authenticated session flow.
+            </p>
           </div>
 
           <div className="space-y-6">
@@ -82,17 +92,15 @@ export default function ApiDocsPage() {
                 </div>
                 <p className="text-sm text-muted-foreground">{ep.description}</p>
                 <CodeBlock code={ep.example} />
+                {ep.path === "/api/remove-bg" && (
+                  <div className="mt-4 space-y-2 text-sm text-muted-foreground">
+                    <p><strong className="text-foreground">Request:</strong> multipart/form-data with the image field named <code>image</code>.</p>
+                    <p><strong className="text-foreground">Success:</strong> <code>{'{ success, originalUrl, processedUrl, creditsRemaining, imagesProcessed }'}</code></p>
+                    <p><strong className="text-foreground">Common errors:</strong> 400 invalid file, 401 missing or invalid session, 403 insufficient credits, 413 file too large.</p>
+                  </div>
+                )}
               </div>
             ))}
-          </div>
-
-          <div className="glass-card rounded-2xl p-6 neon-border mt-8">
-            <h2 className="font-semibold text-foreground mb-2">Rate Limits</h2>
-            <div className="text-sm text-muted-foreground space-y-1">
-              <p>• Free: 5 requests/day</p>
-              <p>• Pro: 1000 requests/minute</p>
-              <p>• Credit Pack: Based on purchased credits</p>
-            </div>
           </div>
         </motion.div>
       </div>

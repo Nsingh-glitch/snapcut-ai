@@ -1,5 +1,7 @@
 import { useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
+import { supabase } from '@/lib/supabase';
 
 declare global {
   interface Window {
@@ -8,19 +10,21 @@ declare global {
 }
 
 export const useCashfree = () => {
+  const navigate = useNavigate();
+
   const triggerPayment = useCallback(async (planId: string) => {
     try {
-      const appId = import.meta.env.VITE_CASHFREE_APP_ID;
-      const mode = import.meta.env.VITE_CASHFREE_MODE || "sandbox";
-
-      if (!appId || appId.includes("REPLACE_WITH")) {
-        toast.error("Cashfree App ID is missing in .env file.");
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!sessionData.session) {
+        navigate("/login");
         return;
       }
 
-      // Get user session for order details
-      const session = localStorage.getItem("snapcut_user_session");
-      const user = session ? JSON.parse(session) : null;
+      const mode = import.meta.env.VITE_CASHFREE_MODE || "sandbox";
+
+      if (!window.Cashfree) {
+        throw new Error("Cashfree checkout is unavailable. Please try again.");
+      }
 
       toast.info("Initializing secure payment...");
 
@@ -32,11 +36,12 @@ export const useCashfree = () => {
       // Fetch real session ID from our internal API
       const response = await fetch("/api/create-order", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${sessionData.session.access_token}`,
+        },
         body: JSON.stringify({
           planId,
-          customerEmail: user?.email,
-          customerName: user?.name,
         }),
       });
 
@@ -61,7 +66,7 @@ export const useCashfree = () => {
       console.error("Cashfree Initialization Error:", error);
       toast.error(error instanceof Error ? error.message : "Failed to load payment gateway.");
     }
-  }, []);
+  }, [navigate]);
 
   return { triggerPayment };
 };

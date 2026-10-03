@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Link, useNavigate } from "react-router-dom";
@@ -7,13 +7,12 @@ import {
   Upload, Download, Image, CreditCard, Settings, LogOut,
   LayoutDashboard, History, Key, Zap, ChevronDown, Menu, X, Heart, User, Trash2, Camera, Mail
 } from "lucide-react";
-import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { useCashfree } from "@/hooks/use-cashfree";
 import { supabase } from "@/lib/supabase";
 import { AvatarUploadDialog } from "@/components/AvatarUploadDialog";
+import { TransparencyBackground } from "@/components/TransparencyBackground";
 
 const sidebarItems = [
   { icon: LayoutDashboard, label: "Dashboard", id: "dashboard" },
@@ -32,15 +31,41 @@ interface HistoryItem {
   isFavorite?: boolean;
 }
 
+interface ProfileStats {
+  creditsRemaining: number;
+  imagesProcessed: number;
+  plan: string;
+}
+
+type BulkStatus = "waiting" | "processing" | "completed" | "failed";
+
+interface BulkItem {
+  id: string;
+  fileKey: string;
+  file: File;
+  originalUrl: string;
+  processedUrl: string | null;
+  status: BulkStatus;
+  error?: string;
+}
+
 export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState("upload");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [originalImageUrl, setOriginalImageUrl] = useState<string | null>(null);
+  const [originalAspectRatio, setOriginalAspectRatio] = useState<number | null>(null);
   const [processedImageUrl, setProcessedImageUrl] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
   const [resultReady, setResultReady] = useState(false);
+  const [bulkItems, setBulkItems] = useState<BulkItem[]>([]);
+  const [bulkProcessing, setBulkProcessing] = useState(false);
+  const [profileStats, setProfileStats] = useState<ProfileStats>({
+    creditsRemaining: 0,
+    imagesProcessed: 0,
+    plan: "Free",
+  });
   const [user, setUser] = useState<any>(null);
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
   const [isAvatarDialogOpen, setIsAvatarDialogOpen] = useState(false);
@@ -49,20 +74,61 @@ export default function DashboardPage() {
     email: "",
     photoUrl: ""
   });
+  const activeUserIdRef = useRef<string | null>(null);
   
   const navigate = useNavigate();
-  const { triggerPayment } = useCashfree();
 
-  const [history, setHistory] = useState<HistoryItem[]>(() => {
-    const saved = localStorage.getItem("snapcut_history");
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [showFavorites, setShowFavorites] = useState(false);
+
+  const resetWorkspace = () => {
+    if (originalImageUrl) URL.revokeObjectURL(originalImageUrl);
+    bulkItems.forEach(item => URL.revokeObjectURL(item.originalUrl));
+    setUploadedFile(null);
+    setOriginalImageUrl(null);
+    setOriginalAspectRatio(null);
+    setProcessedImageUrl(null);
+    setProcessing(false);
+    setResultReady(false);
+    setBulkItems([]);
+    setBulkProcessing(false);
+  };
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    const loadProfile = async (userId: string) => {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("credits_remaining, images_processed, plan")
+        .eq("id", userId)
+        .single();
+      if (!error && data) {
+        if (activeUserIdRef.current !== userId) return;
+        setProfileStats({
+          creditsRemaining: data.credits_remaining,
+          imagesProcessed: data.images_processed,
+          plan: data.plan,
+        });
+      }
+    };
+
+    const applySession = (session: { user: any } | null) => {
       if (!session) {
+        activeUserIdRef.current = null;
+        resetWorkspace();
+        setHistory([]);
+        setShowFavorites(false);
+        setUser(null);
+        setProfileStats({ creditsRemaining: 0, imagesProcessed: 0, plan: "Free" });
         navigate("/login");
         return;
+      }
+      const userChanged = activeUserIdRef.current !== session.user.id;
+      activeUserIdRef.current = session.user.id;
+      if (userChanged) {
+        resetWorkspace();
+        setShowFavorites(false);
+        const saved = localStorage.getItem(`snapcut_history_${session.user.id}`);
+        setHistory(saved ? JSON.parse(saved) : []);
       }
       const userData = {
         id: session.user.id,
@@ -76,32 +142,22 @@ export default function DashboardPage() {
         email: userData.email || "",
         photoUrl: userData.photoUrl
       });
-    });
+      void loadProfile(session.user.id);
+    };
+
+    supabase.auth.getSession().then(({ data: { session } }) => applySession(session));
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!session) {
-        navigate("/login");
-      } else {
-        const userData = {
-          id: session.user.id,
-          email: session.user.email,
-          name: session.user.user_metadata?.full_name || session.user.email?.split('@')[0],
-          photoUrl: session.user.user_metadata?.avatar_url || ""
-        };
-        setUser(userData);
-        setProfileData({
-          name: userData.name,
-          email: userData.email || "",
-          photoUrl: userData.photoUrl
-        });
-      }
+      applySession(session);
     });
 
     return () => subscription.unsubscribe();
   }, [navigate]);
 
   useEffect(() => {
-    localStorage.setItem("snapcut_history", JSON.stringify(history));
+    if (activeUserIdRef.current) {
+      localStorage.setItem(`snapcut_history_${activeUserIdRef.current}`, JSON.stringify(history));
+    }
   }, [history]);
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
@@ -156,16 +212,15 @@ export default function DashboardPage() {
   };
 
   const handleAvatarUploadComplete = async (url: string) => {
-    setProfileData(prev => ({ ...prev, photoUrl: url }));
-    // Also update in Supabase Auth immediately
     try {
       const { error } = await supabase.auth.updateUser({
         data: { avatar_url: url }
       });
       if (error) throw error;
-      toast.success("Profile photo updated successfully!");
+      setProfileData(prev => ({ ...prev, photoUrl: url }));
     } catch (error: any) {
       toast.error(error.message || "Failed to update profile photo");
+      throw error;
     }
   };
 
@@ -182,70 +237,42 @@ export default function DashboardPage() {
     setProcessedImageUrl(null);
 
     try {
-      console.log("Starting upload to webhook:", file.name, file.type, file.size);
-      
-      // We'll try sending it as FormData which is more standard for web uploads
       const formData = new FormData();
       formData.append("image", file);
 
-      const response = await fetch("https://random8171.app.n8n.cloud/webhook/remove-bg", {
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!sessionData.session) throw new Error("Please sign in to process images.");
+
+      const response = await fetch("/api/remove-bg", {
         method: "POST",
+        headers: { Authorization: `Bearer ${sessionData.session.access_token}` },
         body: formData,
-        // When using FormData, we don't set Content-Type header manually
-        // as the browser needs to set it with the correct boundary.
       });
 
-      console.log("Webhook response status:", response.status);
+      const data = await response.json();
+      if (activeUserIdRef.current !== sessionData.session.user.id) return;
 
-      if (!response.ok) {
-        const text = await response.text();
-        console.error("Webhook error response:", text);
-        throw new Error(text || `Server error: ${response.status}`);
-      }
-
-      const contentType = response.headers.get("content-type");
-      console.log("Response content-type:", contentType);
-
-      if (!contentType || !contentType.includes("application/json")) {
-        const text = await response.text();
-        console.error("Non-JSON response received:", text);
-        throw new Error("Server did not return a valid JSON response.");
-      }
-
-      const text = await response.text();
-      if (!text) {
-        throw new Error("Server returned an empty response.");
-      }
-
-      let data;
-      try {
-        data = JSON.parse(text);
-      } catch (e) {
-        console.error("JSON parse error:", e, "Raw text:", text);
-        throw new Error("Failed to parse server response.");
-      }
-      
-      // Handle both { URL: "..." } and [{ URL: "..." }] formats
-      const result = Array.isArray(data) ? data[0] : data;
-      
-      if (result && result.URL) {
-        console.log("Received processed image URL:", result.URL);
-        setProcessedImageUrl(result.URL);
+      if (response.ok && data.success && data.processedUrl) {
+        setProcessedImageUrl(data.processedUrl);
         setResultReady(true);
+        setProfileStats(prev => ({
+          ...prev,
+          creditsRemaining: data.creditsRemaining,
+          imagesProcessed: data.imagesProcessed,
+        }));
         
         // Save to history
         const newHistoryItem: HistoryItem = {
           id: crypto.randomUUID(),
           originalName: file.name,
-          processedUrl: result.URL,
+          processedUrl: data.processedUrl,
           timestamp: Date.now(),
         };
         setHistory(prev => [newHistoryItem, ...prev]);
         
         toast.success("Background removed successfully!");
       } else {
-        console.error("Missing URL in response data:", result);
-        throw new Error("Invalid response format: Missing image URL.");
+        throw new Error(data.error || `Server error: ${response.status}`);
       }
     } catch (error) {
       console.error("Detailed Processing Error:", error);
@@ -275,9 +302,153 @@ export default function DashboardPage() {
     // Revoke old URL if it exists
     if (originalImageUrl) URL.revokeObjectURL(originalImageUrl);
     
+    const imageUrl = URL.createObjectURL(file);
+    const image = new window.Image();
+    image.onload = () => setOriginalAspectRatio(image.naturalWidth / image.naturalHeight);
+    image.src = imageUrl;
     setUploadedFile(file);
-    setOriginalImageUrl(URL.createObjectURL(file));
+    setOriginalImageUrl(imageUrl);
     simulateProcessing(file);
+  };
+
+  const updateBulkItem = (id: string, update: Partial<BulkItem>) => {
+    setBulkItems(prev => prev.map(item => item.id === id ? { ...item, ...update } : item));
+  };
+
+  const getFileKey = (file: File) => `${file.name}:${file.size}:${file.lastModified}`;
+
+  const processBulkItems = async (items: BulkItem[]) => {
+    if (bulkProcessing) return;
+    setBulkProcessing(true);
+    const { data: sessionData } = await supabase.auth.getSession();
+    if (!sessionData.session) {
+      toast.error("Please sign in to process images.");
+      setBulkProcessing(false);
+      return;
+    }
+
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles")
+      .select("credits_remaining")
+      .eq("id", sessionData.session.user.id)
+      .single();
+    if (profileError || !profile) {
+      toast.error("Unable to read your current credit balance.");
+      setBulkProcessing(false);
+      return;
+    }
+
+    const availableCredits = Math.max(0, profile.credits_remaining);
+    const processableItems = items.slice(0, availableCredits);
+    const skippedItems = items.slice(availableCredits);
+    skippedItems.forEach(item => updateBulkItem(item.id, {
+      status: "failed",
+      error: "Insufficient credits. Buy more credits to process this image.",
+    }));
+    if (skippedItems.length > 0) {
+      toast.error("Some images were not started because you do not have enough credits.");
+    }
+    if (processableItems.length === 0) {
+      setBulkProcessing(false);
+      return;
+    }
+
+    let nextIndex = 0;
+    let shouldStop = false;
+    const processNext = async () => {
+      while (!shouldStop) {
+        const index = nextIndex++;
+        if (index >= processableItems.length) return;
+        const item = processableItems[index];
+        updateBulkItem(item.id, { status: "processing", error: undefined });
+
+        try {
+          const formData = new FormData();
+          formData.append("image", item.file);
+          const response = await fetch("/api/remove-bg", {
+            method: "POST",
+            headers: { Authorization: `Bearer ${sessionData.session.access_token}` },
+            body: formData,
+          });
+          const data = await response.json();
+          if (activeUserIdRef.current !== sessionData.session.user.id) return;
+          if (!response.ok || !data.success || !data.processedUrl) {
+            const message = data.error || `Server error: ${response.status}`;
+            updateBulkItem(item.id, { status: "failed", error: message });
+            if (data.code === "INSUFFICIENT_CREDITS") {
+              shouldStop = true;
+              toast.error("Not enough credits to process the remaining images.");
+            }
+            continue;
+          }
+
+          updateBulkItem(item.id, { status: "completed", processedUrl: data.processedUrl });
+          setProfileStats(prev => ({
+            ...prev,
+            creditsRemaining: Math.max(0, data.creditsRemaining),
+            imagesProcessed: data.imagesProcessed,
+          }));
+          setHistory(prev => [{
+            id: crypto.randomUUID(),
+            originalName: item.file.name,
+            processedUrl: data.processedUrl,
+            timestamp: Date.now(),
+          }, ...prev]);
+        } catch (error) {
+          if (activeUserIdRef.current !== sessionData.session.user.id) return;
+          updateBulkItem(item.id, {
+            status: "failed",
+            error: error instanceof Error ? error.message : "Failed to process image.",
+          });
+        }
+      }
+    };
+
+    await Promise.all([processNext(), processNext()]);
+    setBulkProcessing(false);
+  };
+
+  const handleBulkFiles = (files: File[]) => {
+    const validFiles = files.filter(file => {
+      const error = validateFile(file);
+      if (error) toast.error(`${file.name}: ${error}`);
+      return !error;
+    });
+    const existingKeys = new Set(bulkItems.map(item => item.fileKey));
+    const uniqueFiles = validFiles.filter(file => {
+      const fileKey = getFileKey(file);
+      if (existingKeys.has(fileKey)) {
+        toast.info(`${file.name} is already in the queue.`);
+        return false;
+      }
+      existingKeys.add(fileKey);
+      return true;
+    });
+    if (uniqueFiles.length === 0) return;
+
+    const items = uniqueFiles.map(file => ({
+      id: crypto.randomUUID(),
+      fileKey: getFileKey(file),
+      file,
+      originalUrl: URL.createObjectURL(file),
+      processedUrl: null,
+      status: "waiting" as BulkStatus,
+    }));
+    setUploadedFile(null);
+    setOriginalImageUrl(null);
+    setOriginalAspectRatio(null);
+    setProcessedImageUrl(null);
+    setResultReady(false);
+    setBulkItems(prev => [...prev, ...items]);
+    void processBulkItems(items);
+  };
+
+  const retryFailedItems = () => {
+    if (bulkProcessing) return;
+    const failedItems = bulkItems.filter(item => item.status === "failed");
+    if (failedItems.length === 0) return;
+    failedItems.forEach(item => updateBulkItem(item.id, { status: "waiting", error: undefined }));
+    void processBulkItems(failedItems);
   };
 
   const handleDrag = useCallback((e: React.DragEvent) => {
@@ -291,17 +462,16 @@ export default function DashboardPage() {
     e.preventDefault();
     e.stopPropagation();
     setDragActive(false);
-    const file = e.dataTransfer.files[0];
-    if (file) {
-      handleFileSelect(file);
-    }
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length > 1) handleBulkFiles(files);
+    else if (files[0]) handleFileSelect(files[0]);
   }, []);
 
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      handleFileSelect(file);
-    }
+    const files = Array.from(e.target.files || []);
+    if (files.length > 1) handleBulkFiles(files);
+    else if (files[0]) handleFileSelect(files[0]);
+    e.target.value = "";
   };
 
   useEffect(() => {
@@ -334,9 +504,13 @@ export default function DashboardPage() {
     }
     setUploadedFile(null);
     setOriginalImageUrl(null);
+    setOriginalAspectRatio(null);
     setProcessedImageUrl(null);
     setProcessing(false);
     setResultReady(false);
+    bulkItems.forEach(item => URL.revokeObjectURL(item.originalUrl));
+    setBulkItems([]);
+    setBulkProcessing(false);
   };
 
   const handleDownload = async (url?: string, fileName?: string) => {
@@ -371,6 +545,8 @@ export default function DashboardPage() {
     toast.success("Item removed from history");
   };
 
+  const visibleHistory = showFavorites ? history.filter(item => item.isFavorite) : history;
+
   return (
     <div className="min-h-screen bg-background flex">
       {/* Sidebar */}
@@ -398,19 +574,18 @@ export default function DashboardPage() {
         <div className="absolute bottom-0 left-0 right-0 p-3 border-t border-border">
           <div className="glass-card rounded-lg p-3 mb-3">
             <div className="flex justify-between text-xs mb-1">
-              <span className="text-muted-foreground">Daily Credits</span>
-              <span className="text-primary font-medium">3/5</span>
+              <span className="text-muted-foreground">Credits remaining</span>
+              <span className="text-primary font-medium">{Math.max(0, profileStats.creditsRemaining)} credits</span>
             </div>
-            <Progress value={60} className="h-1.5" />
             <div className="flex justify-between items-center mt-3">
               <p className="text-[10px] text-muted-foreground">
-                <Link to="/pricing" className="text-primary hover:underline">View Plans</Link>
+                <Link to="/buy-credits" className="text-primary hover:underline">Buy credits</Link>
               </p>
               <Button 
                 variant="hero" 
                 size="sm" 
                 className="h-7 px-3 text-[10px]"
-                onClick={() => triggerPayment("50 Credits", 199)}
+                onClick={() => navigate("/buy-credits")}
               >
                 Top Up
               </Button>
@@ -447,38 +622,92 @@ export default function DashboardPage() {
         <div className="p-4 lg:p-8">
           {activeTab === "upload" && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="max-w-4xl mx-auto">
-              {!uploadedFile ? (
+              {!uploadedFile && bulkItems.length === 0 ? (
                 <div
                   onDragEnter={handleDrag}
                   onDragLeave={handleDrag}
                   onDragOver={handleDrag}
                   onDrop={handleDrop}
-                  className={`glass-card rounded-2xl border-2 border-dashed transition-all duration-300 cursor-pointer ${
+                  className={`group glass-card rounded-2xl border-2 border-dashed transition-all duration-300 cursor-pointer hover:-translate-y-0.5 hover:shadow-lg hover:shadow-primary/10 ${
                     dragActive ? "border-primary glow-primary" : "border-border hover:border-primary/50"
                   }`}
                 >
-                  <label className="flex flex-col items-center justify-center py-20 cursor-pointer">
-                    <div className="w-20 h-20 rounded-2xl gradient-btn flex items-center justify-center mb-6 glow-primary">
+                  <label className="flex flex-col items-center justify-center py-20 px-5 cursor-pointer">
+                    <div className="w-20 h-20 rounded-2xl gradient-btn flex items-center justify-center mb-6 glow-primary transition-transform duration-300 group-hover:scale-105">
                       <Upload className="h-10 w-10 text-primary-foreground" />
                     </div>
-                    <h3 className="text-xl font-semibold text-foreground mb-2">Drop your image here</h3>
-                    <p className="text-muted-foreground text-sm mb-4">or click to browse</p>
+                    <h3 className="text-xl font-semibold text-foreground mb-2">Drop images here</h3>
+                    <p className="text-muted-foreground text-sm mb-4">or click to browse one or more files</p>
                     <p className="text-xs text-muted-foreground mb-1">JPG, PNG, WEBP · Max 10MB · Max 5000×5000</p>
                     <p className="text-[10px] text-primary/70 font-medium">Tip: You can also paste an image directly (Ctrl+V)</p>
-                    <input type="file" className="hidden" accept=".jpg,.jpeg,.png,.webp" onChange={handleFileInputChange} />
+                    <input type="file" multiple className="hidden" accept=".jpg,.jpeg,.png,.webp" onChange={handleFileInputChange} />
                   </label>
+                </div>
+              ) : bulkItems.length > 0 ? (
+                <div className="glass-card rounded-2xl p-5 md:p-6 neon-border">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-6">
+                    <div>
+                      <h3 className="text-xl font-semibold text-foreground">Bulk removal</h3>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        {bulkItems.filter(item => item.status === "completed").length} / {bulkItems.length} completed
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button variant="glass" size="sm" onClick={resetUpload} disabled={bulkProcessing}>Clear All</Button>
+                      {bulkItems.some(item => item.status === "failed") && (
+                        <Button variant="glass" size="sm" onClick={retryFailedItems} disabled={bulkProcessing}>Retry Failed</Button>
+                      )}
+                      <label className={`inline-flex items-center justify-center rounded-md border border-border bg-transparent px-3 py-2 text-sm font-medium text-foreground transition-colors ${bulkProcessing ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:bg-muted/40"}`}>
+                        <Upload className="h-4 w-4 mr-2" /> Upload More
+                        <input type="file" multiple disabled={bulkProcessing} className="hidden" accept=".jpg,.jpeg,.png,.webp" onChange={handleFileInputChange} />
+                      </label>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {bulkItems.map(item => (
+                      <div key={item.id} className="rounded-xl border border-border bg-background/40 overflow-hidden transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-lg hover:shadow-primary/10">
+                        <div className="grid grid-cols-2 gap-px bg-border aspect-[2/1]">
+                          <div className="bg-muted/30 flex items-center justify-center overflow-hidden">
+                            <img src={item.originalUrl} alt={item.file.name} className="h-full w-full object-contain p-2" />
+                          </div>
+                          <TransparencyBackground className="rounded-none">
+                            {item.processedUrl ? (
+                              <img src={item.processedUrl} alt={`${item.file.name} result`} className="h-full w-full object-contain p-2" />
+                            ) : (
+                              <div className="h-full flex items-center justify-center text-[10px] text-muted-foreground">
+                                {item.status === "processing" ? <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" /> : "Output pending"}
+                              </div>
+                            )}
+                          </TransparencyBackground>
+                        </div>
+                        <div className="p-3">
+                          <p className="truncate text-sm font-medium text-foreground" title={item.file.name}>{item.file.name}</p>
+                          <div className="mt-2 flex items-center justify-between gap-2">
+                            <span className={`text-xs font-medium ${item.status === "completed" ? "text-emerald-400" : item.status === "failed" ? "text-destructive" : "text-muted-foreground"}`}>
+                              {item.status === "waiting" ? "Waiting" : item.status === "processing" ? "Processing" : item.status === "completed" ? "Completed" : "Failed"}
+                            </span>
+                            {item.processedUrl && <Button size="sm" variant="glass" onClick={() => handleDownload(item.processedUrl || undefined, item.file.name)}><Download className="h-3.5 w-3.5 mr-1" /> Download</Button>}
+                          </div>
+                          {item.error && <p className="mt-2 text-xs text-destructive line-clamp-2">{item.error}</p>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               ) : (
                 <div className="glass-card rounded-2xl p-6 neon-border">
                   <div className="flex flex-col md:flex-row gap-6">
                     <div className="flex-1">
                       <h4 className="text-sm font-medium text-muted-foreground mb-3">Original</h4>
-                      <div className="rounded-xl overflow-hidden bg-muted/20 aspect-square flex items-center justify-center">
+                      <div
+                        className="relative w-full overflow-hidden rounded-xl bg-muted/20"
+                        style={{ aspectRatio: originalAspectRatio || 1 }}
+                      >
                         {originalImageUrl && (
                           <img
                             src={originalImageUrl}
                             alt="Original"
-                            className="max-w-full max-h-full object-contain"
+                            className="absolute inset-0 h-full w-full object-contain"
                           />
                         )}
                       </div>
@@ -497,13 +726,12 @@ export default function DashboardPage() {
                     <div className="flex-1">
                       <h4 className="text-sm font-medium text-muted-foreground mb-3">Result</h4>
                       <div
-                        className="rounded-xl overflow-hidden aspect-square flex items-center justify-center relative"
-                        style={{
-                          backgroundImage: "repeating-conic-gradient(hsl(var(--muted)) 0% 25%, transparent 0% 50%) 50% / 20px 20px",
-                        }}
+                        className="relative w-full overflow-hidden rounded-xl"
+                        style={{ aspectRatio: originalAspectRatio || 1 }}
                       >
+                        <TransparencyBackground className="absolute inset-0 rounded-none">
                         {processing ? (
-                          <div className="text-center z-10 bg-background/40 backdrop-blur-sm inset-0 absolute flex flex-col items-center justify-center">
+                          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-background/40 text-center backdrop-blur-sm">
                             <div className="animate-spin w-8 h-8 border-2 border-primary border-t-transparent rounded-full mb-3" />
                             <p className="text-sm text-muted-foreground">Processing...</p>
                           </div>
@@ -511,12 +739,12 @@ export default function DashboardPage() {
                           <motion.div 
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
-                            className="w-full h-full flex items-center justify-center"
+                            className="absolute inset-0 flex items-center justify-center"
                           >
                             <img
                               src={processedImageUrl}
                               alt="Result"
-                              className="max-w-full max-h-full object-contain shadow-2xl"
+                              className="absolute inset-0 h-full w-full object-contain"
                             />
                             <div className="absolute top-2 right-2 bg-primary/90 text-primary-foreground text-[10px] px-2 py-0.5 rounded-full font-bold shadow-lg">
                               READY
@@ -528,13 +756,14 @@ export default function DashboardPage() {
                             <p className="text-xs text-muted-foreground/50">Output will appear here</p>
                           </div>
                         )}
+                        </TransparencyBackground>
                       </div>
                     </div>
                   </div>
 
                   <div className="flex gap-3 mt-6 justify-center">
                     {resultReady && (
-                      <Button variant="hero" className="gap-2" onClick={handleDownload}>
+                      <Button variant="hero" className="gap-2" onClick={() => handleDownload()}>
                         <Download className="h-4 w-4" /> Download HD
                       </Button>
                     )}
@@ -551,9 +780,9 @@ export default function DashboardPage() {
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {[
-                  { label: "Images Processed", value: "127", icon: Image, change: "+12 today" },
-                  { label: "Credits Remaining", value: "3", icon: Zap, change: "Resets daily" },
-                  { label: "Plan", value: "Free", icon: CreditCard, change: "Upgrade →" },
+                  { label: "Images Processed", value: String(profileStats.imagesProcessed), icon: Image, change: "All time" },
+                  { label: "Credits Remaining", value: String(profileStats.creditsRemaining), icon: Zap, change: "Available now" },
+                  { label: "Plan", value: profileStats.plan, icon: CreditCard, change: "View credits →" },
                 ].map((stat) => (
                   <div key={stat.label} className="glass-card rounded-2xl p-5 neon-border">
                     <div className="flex justify-between items-start">
@@ -587,6 +816,15 @@ export default function DashboardPage() {
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="max-w-6xl mx-auto">
               <div className="flex justify-between items-center mb-6">
                 <h3 className="text-xl font-bold text-foreground">Removal History</h3>
+                <div className="flex items-center gap-2">
+                <Button
+                  variant={showFavorites ? "hero" : "glass"}
+                  size="sm"
+                  onClick={() => setShowFavorites(prev => !prev)}
+                >
+                  <Heart className={`h-4 w-4 mr-2 ${showFavorites ? "fill-current" : ""}`} />
+                  Favorites
+                </Button>
                 <Button 
                   variant="glass" 
                   size="sm" 
@@ -595,33 +833,28 @@ export default function DashboardPage() {
                 >
                   Clear All
                 </Button>
+                </div>
               </div>
 
-              {history.length === 0 ? (
+              {visibleHistory.length === 0 ? (
                 <div className="glass-card rounded-2xl p-12 text-center neon-border">
                   <History className="h-12 w-12 text-muted-foreground mx-auto mb-4 opacity-20" />
-                  <p className="text-muted-foreground">No history yet. Start by removing a background!</p>
+                  <p className="text-muted-foreground">{showFavorites ? "No favorite images yet." : "No history yet. Start by removing a background!"}</p>
                   <Button variant="hero" className="mt-4" onClick={() => setActiveTab("upload")}>
                     Upload Image
                   </Button>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {history.map((item) => (
+                  {visibleHistory.map((item) => (
                     <motion.div 
                       key={item.id}
                       layout
                       initial={{ opacity: 0, scale: 0.9 }}
                       animate={{ opacity: 1, scale: 1 }}
-                      className="glass-card rounded-2xl overflow-hidden neon-border group flex flex-col"
+                      className="glass-card rounded-2xl overflow-hidden neon-border group flex flex-col transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-primary/10"
                     >
-                      <div className="aspect-square relative bg-muted/20 flex items-center justify-center overflow-hidden">
-                        <div 
-                          className="absolute inset-0 opacity-50"
-                          style={{
-                            backgroundImage: "repeating-conic-gradient(hsl(var(--muted)) 0% 25%, transparent 0% 50%) 50% / 10px 10px",
-                          }}
-                        />
+                      <TransparencyBackground className="aspect-square rounded-none flex items-center justify-center">
                         <img 
                           src={item.processedUrl} 
                           alt={item.originalName} 
@@ -631,19 +864,21 @@ export default function DashboardPage() {
                           <Button 
                             size="icon" 
                             variant="hero" 
+                            title={item.isFavorite ? "Remove from favorites" : "Add to favorites"}
+                            aria-label={item.isFavorite ? "Remove from favorites" : "Add to favorites"}
                             className={`${item.isFavorite ? "bg-red-500 hover:bg-red-600" : ""}`}
                             onClick={() => toggleFavorite(item.id)}
                           >
                             <Heart className={`h-4 w-4 ${item.isFavorite ? "fill-current" : ""}`} />
                           </Button>
-                          <Button size="icon" variant="hero" onClick={() => handleDownload(item.processedUrl, item.originalName)}>
+                          <Button size="icon" variant="hero" title="Download image" aria-label="Download image" onClick={() => handleDownload(item.processedUrl, item.originalName)}>
                             <Download className="h-4 w-4" />
                           </Button>
-                          <Button size="icon" variant="glass" className="text-destructive hover:text-destructive" onClick={() => deleteHistoryItem(item.id)}>
+                          <Button size="icon" variant="glass" title="Delete history item" aria-label="Delete history item" className="text-destructive hover:text-destructive" onClick={() => deleteHistoryItem(item.id)}>
                             <X className="h-4 w-4" />
                           </Button>
                         </div>
-                      </div>
+                      </TransparencyBackground>
                       <div className="p-4 border-t border-border flex justify-between items-start">
                         <div className="min-w-0 flex-1">
                           <p className="text-sm font-medium text-foreground truncate" title={item.originalName}>

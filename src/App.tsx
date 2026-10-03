@@ -19,6 +19,7 @@ import ContactUs from "./pages/ContactUs";
 import Pricing from "./pages/Pricing";
 import ServiceDelivery from "./pages/ServiceDelivery";
 import PaymentResult from "./pages/PaymentResult";
+import BuyCredits from "./pages/BuyCredits";
 
 const queryClient = new QueryClient();
 
@@ -76,6 +77,7 @@ const App = () => {
             <Route path="/pricing" element={<Pricing />} />
             <Route path="/service-delivery" element={<ServiceDelivery />} />
             <Route path="/payment-result" element={<PaymentResult />} />
+            <Route path="/buy-credits" element={<BuyCredits />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>

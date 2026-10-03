@@ -1,9 +1,12 @@
 import { motion } from "framer-motion";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import { Upload, Zap, Shield, Code, Star, ArrowRight, Check } from "lucide-react";
 import { Navbar } from "@/components/Navbar";
 import { Footer } from "@/components/Footer";
+import { supabase } from "@/lib/supabase";
+import { BeforeAfterSlider } from "@/components/BeforeAfterSlider";
 
 const features = [
   {
@@ -78,6 +81,16 @@ const fadeUp = {
 };
 
 export default function LandingPage() {
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => setIsLoggedIn(Boolean(session)));
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setIsLoggedIn(Boolean(session));
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
@@ -103,11 +116,11 @@ export default function LandingPage() {
               Upload your image. Get a clean, transparent background instantly.
               No design skills needed. Powered by advanced AI.
             </p>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Button variant="hero" size="lg" className="text-base px-8 py-6 gap-2" asChild>
+            <div className="flex flex-col sm:flex-row gap-4 justify-center pt-2">
+              <Button variant="hero" size="lg" className="text-base px-9 py-6 gap-2 shadow-lg shadow-primary/20 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-primary/40 focus-visible:ring-2 focus-visible:ring-primary/70" asChild>
                 <Link to="/dashboard">
                   <Upload className="h-5 w-5" />
-                  Upload Image
+                  Remove Background Free
                 </Link>
               </Button>
               <Button variant="glass" size="lg" className="text-base px-8 py-6" asChild>
@@ -125,29 +138,17 @@ export default function LandingPage() {
             initial={{ opacity: 0, y: 40 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8, delay: 0.3 }}
-            className="mt-16 relative max-w-4xl mx-auto"
+            className="mt-16 relative max-w-4xl mx-auto text-left"
           >
-            <div className="glass-card rounded-2xl p-8 neon-border">
-              <div className="flex flex-col md:flex-row items-center gap-6">
-                <div className="flex-1 bg-muted/30 rounded-xl h-64 flex items-center justify-center border border-dashed border-border">
-                  <div className="text-center">
-                    <Upload className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
-                    <p className="text-muted-foreground text-sm">Original Image</p>
-                  </div>
+            <div className="glass-card rounded-2xl p-5 md:p-7 neon-border transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-primary/10">
+              <div className="mb-4 flex items-end justify-between gap-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Live comparison</p>
+                  <h2 className="mt-1 text-xl md:text-2xl font-semibold text-foreground">See the difference</h2>
                 </div>
-                <div className="flex items-center">
-                  <div className="w-12 h-12 rounded-full gradient-btn flex items-center justify-center glow-primary">
-                    <Zap className="h-5 w-5 text-primary-foreground" />
-                  </div>
-                </div>
-                <div className="flex-1 rounded-xl h-64 flex items-center justify-center border border-primary/20"
-                  style={{
-                    backgroundImage: "repeating-conic-gradient(hsl(var(--muted)) 0% 25%, transparent 0% 50%) 50% / 20px 20px",
-                  }}
-                >
-                  <p className="text-muted-foreground text-sm bg-background/80 px-3 py-1 rounded">Transparent Output</p>
-                </div>
+                <p className="hidden text-xs text-muted-foreground sm:block">Drag the divider to compare</p>
               </div>
+              <BeforeAfterSlider originalImage="/sample-before.svg" processedImage="/sample-after.svg" />
             </div>
           </motion.div>
         </div>
@@ -255,8 +256,8 @@ export default function LandingPage() {
               Join thousands of creators and businesses using SnapCut AI to remove backgrounds instantly.
             </p>
             <Button variant="hero" size="lg" className="text-base px-8 py-6" asChild>
-              <Link to="/register">
-                Create Free Account
+              <Link to={isLoggedIn ? "/dashboard" : "/register"}>
+                {isLoggedIn ? "Go to Dashboard" : "Create Free Account"}
                 <ArrowRight className="ml-2 h-5 w-5" />
               </Link>
             </Button>

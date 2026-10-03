@@ -4,11 +4,14 @@ import { Navbar } from "@/components/Navbar";
 import { Footer } from "@/components/Footer";
 import { Button } from "@/components/ui/button";
 import { Loader2, CheckCircle, XCircle, AlertTriangle } from "lucide-react";
+import { supabase } from "@/lib/supabase";
 
 interface Status {
   type: 'loading' | 'success' | 'error' | 'pending';
   title: string;
   message: string;
+  creditsAdded?: number;
+  creditsRemaining?: number;
 }
 
 export default function PaymentResultPage() {
@@ -32,7 +35,14 @@ export default function PaymentResultPage() {
 
     const verifyPayment = async () => {
       try {
-        const response = await fetch(`/api/payment-status?order_id=${orderId}`);
+        const { data: sessionData } = await supabase.auth.getSession();
+        if (!sessionData.session) {
+          setStatus({ type: 'error', title: 'Sign in required', message: 'Sign in to verify this payment.' });
+          return;
+        }
+        const response = await fetch(`/api/payment-status?order_id=${encodeURIComponent(orderId)}`, {
+          headers: { Authorization: `Bearer ${sessionData.session.access_token}` },
+        });
         const data = await response.json();
 
         if (!response.ok) {
@@ -45,7 +55,9 @@ export default function PaymentResultPage() {
           setStatus({ 
             type: 'success', 
             title: 'Payment Successful',
-            message: 'Payment successful. Thank you for your purchase.' 
+            message: `Credits added: +${data.creditsAdded || 0}. New balance: ${data.creditsRemaining ?? 0}.`,
+            creditsAdded: data.creditsAdded,
+            creditsRemaining: data.creditsRemaining,
           });
         } else if (ui_status === 'FAILED') {
           setStatus({ 
@@ -110,9 +122,18 @@ export default function PaymentResultPage() {
             {status.message}
           </p>
           
-          <Button asChild variant="hero" className="w-full py-6 text-lg font-bold shadow-lg">
-            <Link to="/dashboard">Go to Dashboard</Link>
-          </Button>
+          <div className="flex flex-col sm:flex-row gap-3">
+            <Button asChild variant="hero" className="flex-1 py-6 font-bold shadow-lg">
+              <Link to={status.type === 'error' ? "/buy-credits" : "/dashboard"}>
+                {status.type === 'error' ? 'Try Again' : 'Go to Dashboard'}
+              </Link>
+            </Button>
+            <Button asChild variant="glass" className="flex-1 py-6 font-bold">
+              <Link to={status.type === 'success' ? "/dashboard" : "/dashboard"}>
+                {status.type === 'success' ? 'Remove Background' : 'Back to Dashboard'}
+              </Link>
+            </Button>
+          </div>
         </div>
       </main>
       <Footer />

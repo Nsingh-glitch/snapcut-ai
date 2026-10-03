@@ -1,10 +1,12 @@
 import { Navbar } from "@/components/Navbar";
 import { Footer } from "@/components/Footer";
 import { motion } from "framer-motion";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Check } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useCashfree } from "@/hooks/use-cashfree";
+import { supabase } from "@/lib/supabase";
 
 const plans = [
   {
@@ -53,7 +55,11 @@ const fadeUp = {
 
 export default function PricingPage() {
   const { triggerPayment } = useCashfree();
-  const session = localStorage.getItem("snapcut_user_session");
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => setIsLoggedIn(Boolean(session)));
+  }, []);
 
   return (
     <div className="min-h-screen bg-background">
@@ -122,7 +128,15 @@ export default function PricingPage() {
                   className="w-full py-6 text-base font-bold shadow-lg"
                   asChild
                 >
-                  <Link to={session ? "/dashboard" : "/register"}>{plan.cta}</Link>
+                  <Link to={isLoggedIn ? "/dashboard" : "/register"}>{plan.cta}</Link>
+                </Button>
+              ) : plan.planId === "credits" ? (
+                <Button
+                  variant="glass"
+                  className="w-full py-6 text-base font-bold shadow-lg"
+                  asChild
+                >
+                  <Link to="/buy-credits">Buy Credits</Link>
                 </Button>
               ) : (
                 <Button

@@ -14,7 +14,7 @@ import { supabase } from "@/lib/supabase";
 interface AvatarUploadDialogProps {
   isOpen: boolean;
   onClose: () => void;
-  onUploadComplete: (url: string) => void;
+  onUploadComplete: (url: string) => Promise<void>;
   userId: string;
 }
 
@@ -72,22 +72,21 @@ export function AvatarUploadDialog({ isOpen, onClose, onUploadComplete, userId }
     setIsUploading(true);
     try {
       const fileExt = selectedFile.name.split('.').pop();
-      const fileName = `${userId}-${Math.random()}.${fileExt}`;
-      const filePath = `avatars/${fileName}`;
+      const filePath = `profiles/${userId}/avatar-${crypto.randomUUID()}.${fileExt}`;
 
       // Upload to Supabase Storage
       const { error: uploadError, data } = await supabase.storage
-        .from('profiles')
-        .upload(filePath, selectedFile, { upsert: true });
+        .from('snapcut-images')
+        .upload(filePath, selectedFile, { upsert: false, contentType: selectedFile.type });
 
       if (uploadError) throw uploadError;
 
       // Get Public URL
       const { data: { publicUrl } } = supabase.storage
-        .from('profiles')
+        .from('snapcut-images')
         .getPublicUrl(filePath);
 
-      onUploadComplete(publicUrl);
+      await onUploadComplete(publicUrl);
       toast.success("Profile picture updated!");
       onClose();
       setPreviewUrl(null);

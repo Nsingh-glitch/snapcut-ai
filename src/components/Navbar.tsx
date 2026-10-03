@@ -2,15 +2,17 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import snapcutLogo from "@/assets/snapcut-logo.png";
-import { Menu, X } from "lucide-react";
+import { Menu, Moon, Sun, X } from "lucide-react";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
+import type { Session } from "@supabase/supabase-js";
 
 const navLinks = [
   { label: "Upload", href: "/dashboard" },
   { label: "Features", href: "/#features" },
   { label: "Pricing", href: "/pricing" },
+  { label: "Buy Credits", href: "/buy-credits" },
   { label: "API", href: "/api-docs" },
 ];
 
@@ -18,9 +20,15 @@ export function Navbar() {
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const navigate = useNavigate();
-  const [session, setSession] = useState<any>(null);
+  const [session, setSession] = useState<Session | null>(null);
+  const [theme, setTheme] = useState<"light" | "dark">("light");
 
   useEffect(() => {
+    const storedTheme = localStorage.getItem("snapcut-theme");
+    const nextTheme = storedTheme === "dark" ? "dark" : "light";
+    setTheme(nextTheme);
+    document.documentElement.classList.toggle("dark", nextTheme === "dark");
+
     // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
@@ -33,6 +41,13 @@ export function Navbar() {
 
     return () => subscription.unsubscribe();
   }, []);
+
+  const toggleTheme = () => {
+    const nextTheme = theme === "dark" ? "light" : "dark";
+    setTheme(nextTheme);
+    localStorage.setItem("snapcut-theme", nextTheme);
+    document.documentElement.classList.toggle("dark", nextTheme === "dark");
+  };
 
   const handleSignOut = async () => {
     const { error } = await supabase.auth.signOut();
@@ -81,6 +96,15 @@ export function Navbar() {
         </nav>
 
         <div className="hidden md:flex items-center gap-3">
+          <button
+            type="button"
+            onClick={toggleTheme}
+            aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
+            title={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
+            className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:border-slate-700 dark:hover:bg-slate-800"
+          >
+            {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+          </button>
           {user ? (
             <>
               <Button variant="ghost" asChild>
@@ -139,6 +163,10 @@ export function Navbar() {
               )
             ))}
             <div className="flex flex-col gap-2 pt-2 border-t border-border/50">
+              <Button variant="glass" onClick={() => { toggleTheme(); setMobileOpen(false); }}>
+                {theme === "dark" ? <Sun className="h-4 w-4 mr-2" /> : <Moon className="h-4 w-4 mr-2" />}
+                Switch to {theme === "dark" ? "light" : "dark"} theme
+              </Button>
               {user ? (
                 <>
                   <Button variant="ghost" asChild>
