@@ -1,6 +1,9 @@
 import { createClient } from "@supabase/supabase-js";
 
-const planToCreditsMap: Record<string, { amount: number; credits: number }> = {
+const planToCreditsMap: Record<
+  string,
+  { amount: number; credits: number }
+> = {
   starter: { amount: 49, credits: 10 },
   standard: { amount: 99, credits: 25 },
   pro: { amount: 499, credits: 50 },
@@ -104,7 +107,10 @@ export default async function handler(req: any, res: any) {
         order_id: orderId,
         customer_details: {
           customer_id: `user_${user.id}`,
-          customer_name: customerName || user.user_metadata?.full_name || "User",
+          customer_name:
+            customerName ||
+            user.user_metadata?.full_name ||
+            "User",
           customer_email: customerEmail || user.email,
           customer_phone: "9999999999",
         },
@@ -117,10 +123,14 @@ export default async function handler(req: any, res: any) {
     const data = await response.json();
 
     if (!response.ok) {
-      console.error("Cashfree order creation failed:", data);
+      console.error(
+        "Cashfree order creation failed:",
+        data
+      );
 
       return res.status(response.status).json({
-        error: data.message || "Failed to create order",
+        error:
+          data.message || "Failed to create order",
       });
     }
 
@@ -130,9 +140,8 @@ export default async function handler(req: any, res: any) {
       .insert({
         order_id: orderId,
         user_id: user.id,
-        plan: planId,
-        credits: credits,
         amount: amount,
+        credits: credits,
         status: "PENDING",
       });
 
@@ -143,7 +152,8 @@ export default async function handler(req: any, res: any) {
       );
 
       return res.status(500).json({
-        error: "Payment order created, but purchase record could not be created",
+        error:
+          "Payment order created, but purchase record could not be created",
       });
     }
 
@@ -151,7 +161,7 @@ export default async function handler(req: any, res: any) {
       order_id: orderId,
       payment_session_id: data.payment_session_id,
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Create order error:", error);
 
     return res.status(500).json({
